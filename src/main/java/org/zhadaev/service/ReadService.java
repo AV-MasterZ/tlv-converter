@@ -1,6 +1,7 @@
 package org.zhadaev.service;
 
 import org.zhadaev.enums.Tag;
+import org.zhadaev.exception.FileCorruptedException;
 import org.zhadaev.model.Order;
 
 import java.io.DataInputStream;
@@ -10,11 +11,14 @@ import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 
 public class ReadService {
 
-    public Order readData(InputStream is) throws IOException {
+    public Order readData(InputStream is) throws IOException, FileCorruptedException {
         DataInputStream dis = new DataInputStream(is);
 
         Order order = new Order();
@@ -23,10 +27,14 @@ public class ReadService {
             short tagId = ByteBuffer.wrap(tagArray).order(ByteOrder.LITTLE_ENDIAN).getShort();
             Tag tag = Tag.getById(tagId);
 
+            if (tag == null) {
+                throw new FileCorruptedException();
+            }
+
             if (Tag.ITEM.equals(tag)) {
                 order.addNewItem();
                 dis.skipBytes(2);
-            } else if (tag != null) {
+            } else {
                 byte[] lengthArray = getByteArrayFromDataInputStream(dis, 2);
                 int length = ByteBuffer.wrap(lengthArray).order(ByteOrder.LITTLE_ENDIAN).getShort();
                 byte[] value = getByteArrayFromDataInputStream(dis, length);
@@ -48,8 +56,11 @@ public class ReadService {
     private void setValue(Order order, Tag tag, byte[] value) throws UnsupportedEncodingException {
         switch (tag) {
             case ORDER_DATE_TIME:
-                int date = ByteBuffer.wrap(Arrays.copyOf(value, 4)).order(ByteOrder.LITTLE_ENDIAN).getInt();
-                order.setDateTime(Instant.ofEpochSecond(date).toString());
+                int seconds = ByteBuffer.wrap(Arrays.copyOf(value, 4)).order(ByteOrder.LITTLE_ENDIAN).getInt();
+                String date = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+                                                .withZone(ZoneId.from(ZoneOffset.UTC))
+                                                .format(Instant.ofEpochSecond(seconds));
+                order.setDateTime(date);
                 break;
 
             case ORDER_NUMBER:
@@ -69,8 +80,13 @@ public class ReadService {
                 break;
 
             case ITEMS_QUANTITY:
-                double quantity = ByteBuffer.wrap(Arrays.copyOf(value, 8)).getDouble();
-                order.getLastItem().setQuantity(quantity);
+                if (value.length < 2) {
+                    break;
+                }
+                double point = Math.pow(10, (double) value[0]);
+                value = Arrays.copyOfRange(value, 1, value.length);
+                double quantity = (double) getLong(value);
+                order.getLastItem().setQuantity(quantity/point);
                 break;
 
             case ITEMS_SUM:

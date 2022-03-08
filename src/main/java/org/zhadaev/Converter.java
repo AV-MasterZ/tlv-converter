@@ -1,6 +1,7 @@
 package org.zhadaev;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.zhadaev.exception.FileCorruptedException;
 import org.zhadaev.model.Order;
 import org.zhadaev.service.FileService;
 import org.zhadaev.service.ReadService;
@@ -38,6 +39,9 @@ public class Converter {
             order = readService.readData(fis);
         } catch (IOException e) {
             System.out.println("An error occurred while reading the source document");
+            return;
+        } catch (FileCorruptedException e) {
+            System.out.println(e.getMessage());
             return;
         }
 
